@@ -1,382 +1,133 @@
+
 //
-//  chip8.cpp
+// main.cpp
 //
 
-
+#include <SFML/Audio.hpp>
+#include <SFML/Graphics.hpp>
 #include "chip8.h"
-#include <stdlib.h>
 
-void chip::initialize() {
-    // setting initial values on start
-    this->programcounter = 0x200;
-    this->opcode         = 0;
-    this->idex           = 0;
-    this->stackpointer   = 0;
+// Here is a small helper for you ! Have a look.
+#include "ResourcePath.hpp"
+
+void drawDisplay(const unsigned char *graphics, sf::RenderWindow * window);
+void updateKeyState(chip &key);
+
+int main(int argc, const char *argv[])
+{
+    // Load game flag
+    bool flag = true;
+
+    // Bringing over chip class variables
+    chip imp;
     
-    // clearing init values to ensure proper use
-    for(int i=0; i < SCR_SIZE; ++i){
-        this->graphics[i] = 0;
+    //initialize variables
+    imp.initialize();
+    
+    // Load game external flag from file into memory//
+    flag = imp.loadGame();
+    if(flag == false){
+        printf("Could not open game!");
+        return EXIT_FAILURE;
     }
     
-    for(int i=0; i < STK_SIZE; ++i){
-        this->stack[i] = 0;
+    ///////ALL SFML INTEGRATION BELOW THIS///////
+    sf::RenderWindow * window = new sf::RenderWindow
+    (sf::VideoMode(832, 416), "CHIP8");
+    window->setFramerateLimit(60);
+    
+    sf::Image icon;
+    if (!icon.loadFromFile(resourcePath() + "icon.jpg")) {
+        return EXIT_FAILURE;
     }
-    
-    for(int i=0; i < REG_SIZE; ++i){
-        this->V[i] = 0;
+    window->setIcon(icon.getSize().x, icon.getSize().y, icon.getPixelsPtr());
+
+    sf::Font font;
+    if (!font.loadFromFile(resourcePath() + "sansation.ttf")) {
+        return EXIT_FAILURE;
     }
-    
-    for(int i=0; i < MEM_SIZE; ++i){
-        this->memory[i] = 0;
+    sf::Text text("CHIP8", font, 30);
+    text.setColor(sf::Color::White);
+
+    sf::Music music;
+    if (!music.openFromFile(resourcePath() + "nice_music.ogg")) {
+        return EXIT_FAILURE;
     }
+    else music.play();
     
-    this->drawScreen = true;
     
-    // Loading font set into memory
-    for(int i=0; i < FNT_SIZE; ++i){
-        this->memory[i] = fontset[i];
+    static float refreshSpeed = 1.f/60.f;
+    sf::Clock clock;
+    const unsigned char *graphics = nullptr;
+    // Start the game loop
+    while (window->isOpen())
+    {
+        sf::Event event;
+        while (window->pollEvent(event))
+        {
+            if (event.type == sf::Event::Closed) {
+                window->close();
+            }
+            // Escape pressed: exit
+            if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Escape) {
+                window->close();
+            }
+        }
+        
+        
+
+        window->draw(text);
+        if(clock.getElapsedTime().asSeconds() >= refreshSpeed){
+            updateKeyState(imp);
+            imp.emulateCycle();
+            if(imp.drawScreenF()){
+                window->clear();
+                graphics = imp.getGraphics();
+                drawDisplay(graphics, window);
+                window->display();
+                imp.setScreenF(false);
+            }
+            clock.restart();
+        }
     }
-    
-    // (Re)setting timers at zero
-    this->sound_timer = 0;
-    this->delay_timer = 0;
+    graphics = nullptr;
+    delete window;
+    window = nullptr;
+    return EXIT_SUCCESS;
 }
 
-bool chip::loadGame(){
-    FILE *f = fopen("breakout.ch8", "rb");
-    if (f==NULL){
-        return false;
-    } else {
-        printf("Game loaded!\n");
+void drawDisplay(const unsigned char *graphics, sf::RenderWindow * window){
+    //define what pixel size::::since resolution is constant, variables won't be used
+    sf::RectangleShape rectangle(sf::Vector2f(13,13));
+    for(int y=0; y < 32; ++y){
+        for(int x=0; x < 64; ++x){
+            unsigned char gfx = graphics[x+(64*y)];
+            if(gfx > 0){
+                rectangle.setPosition((float)(x*13), (float)(y*13));
+                window->draw(rectangle);
+            }
+        }
     }
-    // Get filesize before loading into memory
-    fseek(f, 0L, SEEK_END);
-    int filesize = ftell(f);
-    fseek(f, 0L, SEEK_SET);
-    
-    // memory allocate game code into buffer
-    unsigned char *buffer=(unsigned char*)malloc(filesize);
-    fread(buffer, 1, filesize, f);
-    
-    // load buffer into memory
-    for(int i=0; i < filesize; ++i){
-        this->memory[i + 512] = buffer[i];
-    }
-    
-    fclose(f);
-    
-    return true;
 }
 
-void chip::emulateCycle() {
-    // Stage One: Fetch opcode
-    // Program Counter : A register which holds the address of next instruction
-    // when the current is under execution
-    // Stack Pointer   : A pointer which points to the top element of the stack
-    // This loads the opcode by getting the first 8 bits (1st byte) into a 16bit
-    // char (ex. byte a2 would be 0000000010100010) then it shifts left 8 bits
-    // (1010001000000000) then ORs the next two bits (byte cc OR compared would be
-    // 1010001011001100)
-    opcode = this->memory[this->programcounter] << 8 | this->memory[this->programcounter+1];
+void updateKeyState(chip &key){
+    key.setKeyState(0x1, sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Num1));
+    key.setKeyState(0x2, sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Num2));
+    key.setKeyState(0x3, sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Num3));
+    key.setKeyState(0xC, sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Num4));
     
-    // The AND bit operator allows the first byte to be pass through to the case statements
-    // because the limiter being compared(example : |1010|001000000000 & |1111|000000000000)
+    key.setKeyState(0x4, sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Q));
+    key.setKeyState(0x5, sf::Keyboard::isKeyPressed(sf::Keyboard::Key::W));
+    key.setKeyState(0x6, sf::Keyboard::isKeyPressed(sf::Keyboard::Key::E));
+    key.setKeyState(0xD, sf::Keyboard::isKeyPressed(sf::Keyboard::Key::R));
     
-    switch(this->opcode & 0xF000){
-        case 0x0000:
-            switch(this->opcode & 0x00FF){
-                case 0x00E0:
-                    // OPCODE: 0x00E0
-                    // Clear Screen
-                    for (int i=0; i<SCR_SIZE; ++i){
-                        this->graphics[i] = 0;
-                    }
-                    this->programcounter+=2; // PC will be incremented by 2 if processed
-                break;
-                case 0x00EE:
-                    // OPCODE: 0x00EE
-                    // Return PC to the top of stack after subroutine
-                    --this->stackpointer;
-                    this->programcounter = this->stack[this->stackpointer];
-                    this->programcounter+=2;
-                break;
-                default:
-                    printf("UNKNOWN OPCODE: %c\n", this->opcode);
-                break;
-            }
-        break;
-        case 0x1000:
-            // OPCODE: 0x1nnn
-            // Set program counter to 'nnn'
-            this->programcounter = this->opcode & 0x0FFF;
-        break;
-        case 0x2000:
-            // OPCODE: 0x2nnn
-            // Increment stack pointer, puts PC at top of stack, PC set to 'nnn'
-            this->stack[this->stackpointer] = this->programcounter;
-            ++this->stackpointer;
-            this->programcounter = this->opcode & 0x0FFF;
-        break;
-        case 0x3000:
-            // OPCODE: 0x3xkk
-            // Compares register Vx to kk, if they are equal the PC is incremented by 2
-            if(this->V[this->opcode & 0x0F00 >> 8] == (this->opcode & 0x00FF)){
-                this->programcounter += 4;
-            } else {
-                this->programcounter += 2;
-            }
-        break;
-        case 0x4000:
-            // OPCODE: 0x4xkk
-            // Compares register Vx to kk, if they are not equal the PC is incremented by 2
-            if(this->V[this->opcode & 0x0F00 >> 8] != (this->opcode & 0x00FF)){
-                this->programcounter += 4;
-            } else {
-                this->programcounter += 2;
-            }
-        break;
-        case 0x5000:
-            // OPCODE: 0x5xy0
-            // Compared register Vx and Vy, if equal, PC is incremented by 2
-            if(this->V[this->opcode & 0x0F00 >> 8] == this->V[this->opcode & 0x00F0 >> 8]){
-                this->programcounter += 4;
-            } else {
-                this->programcounter += 2;
-            }
-        break;
-        case 0x6000:
-            // OPCODE: 0x6xkk
-            // put value kk into register Vx
-            this->V[this->opcode & 0x0F00 >> 8] = this->opcode & 0x00FF;
-            this->programcounter += 2;
-        break;
-        case 0x7000:
-            // OPCODE: 0x7xkk
-            // Add the values kk and Vx and stores in Vx
-            this->V[this->opcode & 0x0F00 >>8] = this->V[this->opcode & 0x0F00 >>8] + (this->opcode & 0x00FF);
-            this->programcounter += 2;
-        break;
-        case 0x8000:
-            switch (this->opcode & 0x000F) {
-                case 0x0000:
-                    // OPCODE: 0x8xy0
-                    // Stores value of Vy into Vx
-                    this->V[this->opcode & 0x0F00 >>8] = this->V[this->opcode & 0x00F0 >>4];
-                    this->programcounter += 2;
-                break;
-                case 0x0001:
-                    // OPCODE: 0x8xy1
-                    // ORs Vx and Vy and stores result in Vx
-                    this->V[this->opcode & 0x0F00 >>8] |= (this->V[this->opcode & 0x00F0 >>4]);
-                break;
-                case 0x0002:
-                    // OPCODE: 0x8xy2
-                    // ANDs Vx and Vy and stores result in Vx
-                    this->V[this->opcode & 0x0F00 >>8] &= (this->V[this->opcode & 0x00F0 >>4]);
-                    this->programcounter += 2;
-                break;
-                case 0x0003:
-                    // OPCODE: 0x8xy3
-                    // XORs Vx and Vy and stores result in Vx
-                    this->V[this->opcode & 0x0F00 >>8] ^= (this->V[this->opcode & 0x00F0 >>4]);
-                    this->programcounter += 2;
-                break;
-                case 0x0004:
-                    // OPCODE: 0x8xy4
-                    // ADDs Vx and Vy and stores result in Vx, also adds a flag if the addition carries
-                    // The if loop predicts carry
-                    if(this->V[this->opcode & 0x00F0 >>4] > (0xFF - this->V[this->opcode & 0x0F00 >>8])){
-                        this->V[0xF] = 1;
-                    } else {
-                        this->V[0xF] = 0;
-                    }
-                    this->V[this->opcode & 0x0F00 >>8] += (this->V[this->opcode & 0x00F0 >>4]);
-                    this->programcounter += 2;
-                break;
-                case 0x0005:
-                    // OPCODE: 0x8xy5
-                    // SUBs Vx and Vy and stores result in Vx, also adds a flag if the subtraction borrows
-                    // The if loop predicts borrow
-                    if(this->V[this->opcode & 0x00F0 >>4] > (this->V[this->opcode & 0x0F00 >>8])){
-                        this->V[0xF] = 0;
-                    } else {
-                        this->V[0xF] = 1;
-                    }
-                    this->V[this->opcode & 0x0F00 >>8] -= (this->V[this->opcode & 0x00F0 >>4]);
-                    this->programcounter += 2;
-                break;
-                case 0x0006:
-                    // OPCODE: 0x8xy6
-                    // SHR Vx 1 place and stores result in Vx, also adds a flag if LSB is 1
-                    // The if loop predicts borrow
-                    this->V[0xF] = this->V[this->opcode & 0x0F00 >>8] & 0x1;
-                    this->V[this->opcode & 0x0F00 >>8] >>= 1;
-                    this->programcounter += 2;
-                break;
-                case 0x0007:
-                    // OPCODE: 0x8xy7
-                    // SUBN Vy and Vx and stores result in Vx, also adds a flag if the subtraction borrows
-                    // The if loop predicts borrow
-                    if(this->V[this->opcode & 0x00F0 >>4] < (this->V[this->opcode & 0x0F00 >>8])){
-                        this->V[0xF] = 0;
-                    } else {
-                        this->V[0xF] = 1;
-                    }
-                    this->V[this->opcode & 0x0F00 >>8] = (this->V[this->opcode & 0x00F0 >>4]) - (this->V[this->opcode & 0x0F00 >>8]);
-                    this->programcounter += 2;
-                break;
-                case 0x000E:
-                    // OPCODE: 0x8xyE
-                    // SHL Vx 1 place and stores result in Vx, also adds a flag if MSB is 1
-                    // The if loop predicts borrow
-                    this->V[0xF] = this->V[this->opcode & 0x0F00 >>8] >> 7;
-                    this->V[this->opcode & 0x0F00 >>8] <<= 1;
-                    this->programcounter += 2;
-                break;
-                default:
-                    printf("UNKNOWN OPCODE: %c\n", this->opcode);
-                break;
-            }
-        break;
-        case 0x9000:
-            // OPCODE: 0x9xy0
-            // If Vx and Vy are not equal, increment PC by 2
-            if(this->V[this->opcode & 0x0F00] != this->V[this->opcode & 0x00F0]){
-                this->programcounter += 4;
-            } else {
-                this->programcounter += 2;
-            }
-        break;
-        case 0xA000:
-            // OPCODE: 0xAnnn
-            // Set register I equal to nnn
-            this->idex = (this->opcode & 0x0FFF);
-            this->programcounter += 2;
-        break;
-        case 0xB000:
-            // OPCODE: 0xBnnn
-            // Set PC equal to nnn plus register V0
-            this->programcounter = (this->opcode & 0x0FFF) + this->V[0x0];
-        break;
-        case 0xC000:
-            // OPCODE: 0xCxnn
-            // Set Vx equal to random number below nn
-            this->V[(this->opcode & 0x0F00) >> 8] = (rand() % 0xFF) & (this->opcode & 0x00FF);
-            this->programcounter += 2;
-        break;
-        case 0xD000:{
-            // OPCODE: 0xDxyn
-            // draw function
-            twobytes x = V[(this->opcode & 0x0F00) >>8];
-            twobytes y = V[(this->opcode & 0x00F0) >>4];
-            twobytes height = this->opcode & 0x000F;
-            V[0xF] = 0;
-            
-            twobytes pixel;
-            for(byte yline = 0; yline <height; ++yline){
-                pixel = this->memory[this->idex + yline];
-                for(byte xline = 0; xline < 8; ++xline){
-                    if((pixel & (0x80 >> xline)) != 0){
-                        if(this->graphics[(x+xline+((y+yline) * 64))] == 1){
-                            V[0xF] = 1; //check if sprite is already in graphics
-                        }
-                        
-                        this->graphics[x + xline + ((y + yline) * 64)] ^= 1; // XOR to screen
-                    }
-                }
-            }
-            
-            this->drawScreen = true;
-            
-            this->programcounter += 2;
-        break;}
-        case 0xE000:
-            //////
-            //////TIED WITH KEYBOARD COMMANDS
-            printf("FLAG KEYBOARD: %c\n", this->opcode);
-            //////
-            this->programcounter += 2;
-        break;
-        case 0xF000:
-            switch(this->opcode & 0x00FF){
-                case 0x0007:
-                    // OPCODE: 0xFx07
-                    // Set Vx equal to delay timer
-                    this->V[this->opcode & 0x0F00 >>8] = this->delay_timer;
-                    this->programcounter += 2;
-                break;
-                case 0x000A:
-                    // OPCODE: 0xFx0A
-                    // Stop execution unles key is pressed, then store key value in Vx
-                    //////
-                    //////TIED WITH KEYBOARD COMMANDS
-                    printf("FLAG KEYBOARD: %c\n", this->opcode);
-                    //////
-                    this->programcounter += 2;
-                break;
-                case 0x0015:
-                    // OPCODE: 0xFx15
-                    // Delay timer is set to the value of Vx
-                    this->delay_timer = this->V[this->opcode & 0x0F00 >>8];
-                    this->programcounter += 2;
-                break;
-                case 0x0018:
-                    // OPCODE: 0xFx18
-                    // Sound timer is set to the value of Vx
-                    this->sound_timer = this->V[this->opcode & 0x0F00 >>8];
-                    this->programcounter += 2;
-                break;
-                case 0x001E:
-                    // OPCODE: 0xFx1E
-                    // Sound timer is set to the value of Vx
-                    this->idex += this->V[this->opcode & 0x0F00 >>8];
-                    this->programcounter += 2;
-                break;
-                case 0x0029:
-                    // OPCODE: 0xFx29
-                    // idex is set to location of hexadecimal sprite corresponding to Vx (relating to font set)
-                    this->idex = this->V[this->opcode & 0x0F00 >>8] * 0x5;
-                    this->programcounter += 2;
-                break;
-                case 0x0033:
-                    // OPCODE: 0xFx33
-                    // Take decimal value of Vx and store in memory location idex incrementing with place digits
-                    this->memory[this->idex] = this->V[(this->opcode & 0x0F00 >>8)]/100;
-                    this->memory[this->idex + 1] = (this->V[(this->opcode & 0x0F00 >>8)]/10)%10;
-                    this->memory[this->idex + 1] = (this->V[(this->opcode & 0x0F00 >>8)]%10)%10;
-                    this->programcounter += 2;
-                break;
-                case 0x0055:
-                    // OPCODE: 0xFx55
-                    // Store registers V0 through Vx into memory starting at location idex
-                    for(int i=0; i<(this->opcode & 0x0F00 >>8); ++i){
-                        this->memory[this->idex + i] = this->V[0x0 + i];
-                    }
-                    // Increment idex so it's pointing outside of the newly inserted values
-                    idex += ((this->opcode & 0x0F00) >> 8) + 1;
-                    
-                    this->programcounter += 2;
-                break;
-                case 0x0065:
-                    // OPCODE: 0xFx65
-                    // Store memory into registers V0 through Vx starting at location idex
-                    for(int i=0; i<(this->opcode & 0x0F00 >>8); ++i){
-                        this->V[0x0 + i] = this->memory[this->idex + i];
-                    }
-                    // Increment idex so it's pointing outside of the newly inserted values
-                    idex += ((this->opcode & 0x0F00) >> 8) + 1;
-                    
-                    this->programcounter += 2;
-                break;
-                default:
-                    printf("UNKNOWN OPCODE: %c\n", this->opcode);
-                break;
-            }
-        break;
-        default:
-            printf("UNKNOWN OPCODE: %c\n", this->opcode);
-        break;
-    }
-    if(this->delay_timer > 0) --this->delay_timer;
-    if(this->sound_timer > 0) --this->sound_timer;
+    key.setKeyState(0x7, sf::Keyboard::isKeyPressed(sf::Keyboard::Key::A));
+    key.setKeyState(0x8, sf::Keyboard::isKeyPressed(sf::Keyboard::Key::S));
+    key.setKeyState(0x9, sf::Keyboard::isKeyPressed(sf::Keyboard::Key::D));
+    key.setKeyState(0xE, sf::Keyboard::isKeyPressed(sf::Keyboard::Key::F));
+    
+    key.setKeyState(0xA, sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Z));
+    key.setKeyState(0x0, sf::Keyboard::isKeyPressed(sf::Keyboard::Key::X));
+    key.setKeyState(0xB, sf::Keyboard::isKeyPressed(sf::Keyboard::Key::C));
+    key.setKeyState(0xF, sf::Keyboard::isKeyPressed(sf::Keyboard::Key::V));
 }
