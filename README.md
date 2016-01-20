@@ -2,6 +2,8 @@
 
 C++ CHIP-8 Interpreter built with an SFML graphics handler
 
-Not currently completed. ~~Opcodes and~~ keyboard interfacing have to be integrated.
+Not currently completed. ~~Opcodes and keyboard interfacing have to be integrated.~~
 
-OPCODES done!
+OPCODES done! Keyboard interface done!
+
+Working fully as far as I know!
