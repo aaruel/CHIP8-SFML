@@ -4,7 +4,7 @@
 
 #ifndef __SFMLTRY__chip8__
 #define __SFMLTRY__chip8__
-
+#pragma once
 #include <stdio.h>
 
 class chip {
@@ -23,6 +23,10 @@ class chip {
         void initialize();
         void emulateCycle();
         bool loadGame();
+        byte *getGraphics();
+        bool drawScreenF();
+        bool setScreenF(bool set);
+        void setKeyState(unsigned int key, bool state);
     
         // two byte opcodes
         twobytes opcode;
@@ -80,6 +84,8 @@ class chip {
             0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
             0xF0, 0x80, 0xF0, 0x80, 0x80  // F
         };
+        // Draw screen flag
+        bool drawScreen;
 };
 
 #endif /* defined(__SFMLTRY__chip8__) */
