@@ -1,9 +1,5 @@
 //
 //  chip8.h
-//  SFMLTRY
-//
-//  Created by Aaron Ruel on 1/14/16.
-//  Copyright (c) 2016 AAR. All rights reserved.
 //
 
 #ifndef __SFMLTRY__chip8__
